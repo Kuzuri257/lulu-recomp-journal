@@ -934,6 +934,17 @@ const DEFAULT_SETTINGS = {
   stepsGoal: 8000
 };
 
+function normalizeSettings(settings){
+  const loaded = { ...DEFAULT_SETTINGS, ...settings };
+  const isLegacyDefault =
+    Number(loaded.calorieTarget) === 1600 &&
+    Number(loaded.proteinTarget) === 140 &&
+    Number(loaded.fatTarget) === 44 &&
+    Number(loaded.carbTarget) === 160;
+
+  return isLegacyDefault ? { ...loaded, ...DEFAULT_SETTINGS } : loaded;
+}
+
 const ACTIVITY_TYPES = [
   {key:'pt', label:'PT Session', emoji:'🏋️'},
   {key:'yoga', label:'Yoga', emoji:'🧘'},
@@ -1323,7 +1334,7 @@ async function loadData(){
   }catch(e){ state.suppLogs=[]; }
   try{
     const r = await window.storage.get(SETTINGS_KEY, false);
-    if(r && r.value) state.settings = {...DEFAULT_SETTINGS, ...JSON.parse(r.value)};
+    if(r && r.value) state.settings = normalizeSettings(JSON.parse(r.value));
   }catch(e){ state.settings={...DEFAULT_SETTINGS}; }
 
   render();
