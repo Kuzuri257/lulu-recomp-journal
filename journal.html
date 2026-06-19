@@ -927,10 +927,10 @@ const WEIGHTS_KEY = 'lulu-weights';
 const SETTINGS_KEY = 'lulu-settings';
 
 const DEFAULT_SETTINGS = {
-  calorieTarget: 1600,
-  proteinTarget: 140,
-  fatTarget: 44,
-  carbTarget: 160,
+  calorieTarget: 1570,
+  proteinTarget: 96,
+  fatTarget: 56,
+  carbTarget: 171,
   stepsGoal: 8000
 };
 
@@ -1532,6 +1532,42 @@ async function addMeal(){
   render();
 }
 
+function openEditMeal(id){
+  const macro = getMacroDay(state.today);
+  const meal = macro.meals.find(item => item.id === id);
+  if(!meal) return;
+  openModal(`
+    <h3>Edit Meal</h3>
+    <div class="modal-row"><label>Meal name</label><input type="text" id="edit-meal-name" value="${escapeHtml(meal.name)}"></div>
+    <div class="modal-row"><label>Calories</label><input type="number" id="edit-meal-cal" value="${meal.calories || ''}"></div>
+    <div class="modal-row"><label>Protein (g)</label><input type="number" id="edit-meal-pro" value="${meal.protein || ''}"></div>
+    <div class="modal-row"><label>Fat (g)</label><input type="number" id="edit-meal-fat" value="${meal.fat || ''}"></div>
+    <div class="modal-row"><label>Carbs (g)</label><input type="number" id="edit-meal-carb" value="${meal.carbs || ''}"></div>
+    <div class="modal-actions">
+      <button class="btn btn-danger-text" onclick="deleteMeal('${id}')">Delete</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEditMeal('${id}')">Save</button>
+    </div>
+  `);
+}
+
+async function saveEditMeal(id){
+  const macro = getMacroDay(state.today);
+  const meal = macro.meals.find(item => item.id === id);
+  if(!meal) return;
+  meal.name = document.getElementById('edit-meal-name').value.trim() || meal.name;
+  meal.calories = parseFloat(document.getElementById('edit-meal-cal').value) || 0;
+  meal.protein = parseFloat(document.getElementById('edit-meal-pro').value) || 0;
+  meal.fat = parseFloat(document.getElementById('edit-meal-fat').value) || 0;
+  meal.carbs = parseFloat(document.getElementById('edit-meal-carb').value) || 0;
+  const totals = mealTotals(macro.meals);
+  state.macroDays[state.today] = { ...macro, ...totals };
+  await persistMacroDays();
+  closeModal();
+  showToast('Meal updated', 'nutrition');
+  render();
+}
+
 async function deleteMeal(id){
   const macro = getMacroDay(state.today);
   macro.meals = macro.meals.filter(meal => meal.id !== id);
@@ -1872,7 +1908,10 @@ function renderToday(){
         <div class="meal-name">${escapeHtml(meal.name)}</div>
         <div class="meal-macros">${Math.round(meal.calories || 0)} kcal · ${Math.round(meal.protein || 0)}P / ${Math.round(meal.fat || 0)}F / ${Math.round(meal.carbs || 0)}C</div>
       </div>
-      <button class="icon-btn" onclick="deleteMeal('${meal.id}')" title="Remove meal">✕</button>
+      <div class="ai-actions">
+        <button class="icon-btn" onclick="openEditMeal('${meal.id}')" title="Edit meal">✏️</button>
+        <button class="icon-btn" onclick="deleteMeal('${meal.id}')" title="Remove meal">✕</button>
+      </div>
     </div>
   `).join('') : '<div class="empty-state">No meals logged yet today</div>';
 

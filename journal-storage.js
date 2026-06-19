@@ -10,10 +10,10 @@ const JOURNAL_KEYS = {
 };
 
 const DEFAULT_JOURNAL_SETTINGS = {
-  calorieTarget: 1600,
-  proteinTarget: 140,
-  fatTarget: 44,
-  carbTarget: 160,
+  calorieTarget: 1570,
+  proteinTarget: 96,
+  fatTarget: 56,
+  carbTarget: 171,
   stepsGoal: 8000
 };
 
