@@ -139,7 +139,8 @@ function createJournalStorage(client, session){
         calories: Number(row.calories) || 0,
         protein: Number(row.protein) || 0,
         fat: Number(row.fat) || 0,
-        carbs: Number(row.carbs) || 0
+        carbs: Number(row.carbs) || 0,
+        meals: Array.isArray(row.meals) ? row.meals : []
       };
     });
     return { value: JSON.stringify(days) };
@@ -154,7 +155,8 @@ function createJournalStorage(client, session){
       calories: Number(item.calories) || 0,
       protein: Number(item.protein) || 0,
       fat: Number(item.fat) || 0,
-      carbs: Number(item.carbs) || 0
+      carbs: Number(item.carbs) || 0,
+      meals: Array.isArray(item.meals) ? item.meals : []
     }));
     await client.from('lulu_macro_days').delete().eq('user_id', user.id);
     if(rows.length) await client.from('lulu_macro_days').insert(rows);

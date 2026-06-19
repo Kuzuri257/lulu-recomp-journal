@@ -343,6 +343,47 @@
     flex-wrap:wrap;
   }
   .macro-targets b{color:var(--ink);}
+  .meal-add-row{
+    display:grid;
+    grid-template-columns:1.35fr repeat(4,.78fr);
+    gap:8px;
+    margin-bottom:10px;
+  }
+  .meal-add-row input{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:10px;
+    font-size:13px;
+    background:var(--blush);
+    color:var(--ink);
+  }
+  .meal-add-row input:focus{outline:2px solid var(--rose);outline-offset:1px;}
+  .meal-list{display:flex;flex-direction:column;gap:8px;margin:10px 0 16px;}
+  .meal-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    background:var(--blush);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:10px 12px;
+  }
+  .meal-name{font-weight:800;font-size:13px;}
+  .meal-macros{font-size:11px;color:var(--ink-soft);margin-top:2px;}
+  .meal-total-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    background:var(--blue-pale);
+    color:var(--blue-deep);
+    border-radius:999px;
+    padding:7px 10px;
+    font-size:11px;
+    font-weight:850;
+    margin-bottom:12px;
+  }
   .macro-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;}
   .macro-field{text-align:center;}
   .macro-field label{
@@ -860,6 +901,7 @@
     .header h1{font-size:26px;}
     .train-options{grid-template-columns:repeat(3,1fr);}
     .macro-grid{grid-template-columns:1fr 1fr;}
+    .meal-add-row{grid-template-columns:1fr 1fr;}
   }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1153,7 +1195,7 @@ function hideMeme(event){
 let state = {
   activities: [],   // [{id, date, type, note}]
   weights: [],      // [{id, date, value}]
-  macroDays: {},    // { 'YYYY-MM-DD': {steps, calories, protein, fat, carbs} }
+  macroDays: {},    // { 'YYYY-MM-DD': {steps, calories, protein, fat, carbs, meals: []} }
   suppStack: [],    // [{id, name, dose, unit}] -- her personal reference list/targets
   suppLogs: [],     // [{id, date, name, dose, unit}] -- actual daily entries
   settings: {...DEFAULT_SETTINGS},
@@ -1392,7 +1434,15 @@ async function deleteActivity(id){
 
 /* ---------- Steps / Macros (per-day, editable) ---------- */
 function getMacroDay(dateKeyStr){
-  return state.macroDays[dateKeyStr] || {steps:0, calories:0, protein:0, fat:0, carbs:0};
+  const day = state.macroDays[dateKeyStr] || {};
+  return {
+    steps: Number(day.steps) || 0,
+    calories: Number(day.calories) || 0,
+    protein: Number(day.protein) || 0,
+    fat: Number(day.fat) || 0,
+    carbs: Number(day.carbs) || 0,
+    meals: Array.isArray(day.meals) ? day.meals : []
+  };
 }
 
 function updateStepsBar(){
@@ -1421,6 +1471,27 @@ function updateMacroBars(){
   setBar('mp-fat', fat, s.fatTarget);
   setBar('mp-carb', carb, s.carbTarget);
 }
+
+function mealTotals(meals){
+  return (meals || []).reduce((totals, meal) => {
+    totals.calories += Number(meal.calories) || 0;
+    totals.protein += Number(meal.protein) || 0;
+    totals.fat += Number(meal.fat) || 0;
+    totals.carbs += Number(meal.carbs) || 0;
+    return totals;
+  }, { calories:0, protein:0, fat:0, carbs:0 });
+}
+
+function syncMacroInputsFromMeals(){
+  const macro = getMacroDay(state.today);
+  if(!macro.meals.length) return;
+  const totals = mealTotals(macro.meals);
+  document.getElementById('input-cal').value = totals.calories || '';
+  document.getElementById('input-pro').value = totals.protein || '';
+  document.getElementById('input-fat').value = totals.fat || '';
+  document.getElementById('input-carb').value = totals.carbs || '';
+  updateMacroBars();
+}
 function setBar(id, val, target){
   const pct = target>0 ? Math.min(100, Math.round((val/target)*100)) : 0;
   const fillEl=document.getElementById(id+'-fill');
@@ -1436,9 +1507,38 @@ async function saveDayLog(){
   const fat = parseFloat(document.getElementById('input-fat').value) || 0;
   const carb = parseFloat(document.getElementById('input-carb').value) || 0;
 
-  state.macroDays[state.today] = {steps, calories:cal, protein:pro, fat:fat, carbs:carb};
+  const existing = getMacroDay(state.today);
+  state.macroDays[state.today] = {steps, calories:cal, protein:pro, fat:fat, carbs:carb, meals: existing.meals};
   await persistMacroDays();
   showToast("Today's nutrition saved", 'nutrition');
+  render();
+}
+
+async function addMeal(){
+  const name = document.getElementById('input-meal-name').value.trim();
+  const calories = parseFloat(document.getElementById('input-meal-cal').value) || 0;
+  const protein = parseFloat(document.getElementById('input-meal-pro').value) || 0;
+  const fat = parseFloat(document.getElementById('input-meal-fat').value) || 0;
+  const carbs = parseFloat(document.getElementById('input-meal-carb').value) || 0;
+  if(!name){ showToast('Add a meal name first'); return; }
+  if(!calories && !protein && !fat && !carbs){ showToast('Add at least one meal number'); return; }
+
+  const macro = getMacroDay(state.today);
+  macro.meals.push({ id: uid(), name, calories, protein, fat, carbs });
+  const totals = mealTotals(macro.meals);
+  state.macroDays[state.today] = { ...macro, ...totals };
+  await persistMacroDays();
+  showToast(`${name} added`, 'nutrition');
+  render();
+}
+
+async function deleteMeal(id){
+  const macro = getMacroDay(state.today);
+  macro.meals = macro.meals.filter(meal => meal.id !== id);
+  const totals = mealTotals(macro.meals);
+  state.macroDays[state.today] = { ...macro, ...totals };
+  await persistMacroDays();
+  showToast('Meal removed');
   render();
 }
 
@@ -1752,6 +1852,7 @@ function render(){
   // post-render wiring
   if(state.activeTab==='today'){
     updateStepsBar();
+    syncMacroInputsFromMeals();
     updateMacroBars();
     drawStepsTrend();
   }
@@ -1764,6 +1865,16 @@ function renderToday(){
   const todaysActivities = state.activities.filter(a=>a.date===state.today);
   const macro = getMacroDay(state.today);
   const s = state.settings;
+  const totals = mealTotals(macro.meals);
+  const mealListHtml = macro.meals.length ? macro.meals.map(meal => `
+    <div class="meal-item">
+      <div>
+        <div class="meal-name">${escapeHtml(meal.name)}</div>
+        <div class="meal-macros">${Math.round(meal.calories || 0)} kcal · ${Math.round(meal.protein || 0)}P / ${Math.round(meal.fat || 0)}F / ${Math.round(meal.carbs || 0)}C</div>
+      </div>
+      <button class="icon-btn" onclick="deleteMeal('${meal.id}')" title="Remove meal">✕</button>
+    </div>
+  `).join('') : '<div class="empty-state">No meals logged yet today</div>';
 
   const activityListHtml = todaysActivities.length ? todaysActivities.map(a=>{
     const t = ACTIVITY_TYPES.find(x=>x.key===a.type);
@@ -1823,6 +1934,17 @@ function renderToday(){
     <div class="card">
       <h2><span class="icon">🍽️</span> Nutrition</h2>
       <div class="macro-targets">Targets: <b>${s.calorieTarget} kcal</b> · <b>${s.proteinTarget}g</b> protein · <b>${s.fatTarget}g</b> fat · <b>${s.carbTarget}g</b> carbs</div>
+      <div class="card-sub">Log meals separately and the day totals update automatically.</div>
+      <div class="meal-add-row">
+        <input type="text" id="input-meal-name" placeholder="Meal name">
+        <input type="number" id="input-meal-cal" placeholder="kcal">
+        <input type="number" id="input-meal-pro" placeholder="P">
+        <input type="number" id="input-meal-fat" placeholder="F">
+        <input type="number" id="input-meal-carb" placeholder="C">
+      </div>
+      <button class="btn btn-primary btn-block" onclick="addMeal()">+ Add Meal</button>
+      <div class="meal-list">${mealListHtml}</div>
+      ${macro.meals.length ? `<div class="meal-total-pill">Meal total · ${Math.round(totals.calories)} kcal · ${Math.round(totals.protein)}P / ${Math.round(totals.fat)}F / ${Math.round(totals.carbs)}C</div>` : ''}
       <div class="macro-grid">
         <div class="macro-field cal"><label>Calories</label><input type="number" id="input-cal" value="${macro.calories||''}" oninput="updateMacroBars()"><span class="unit">kcal</span></div>
         <div class="macro-field pro"><label>Protein</label><input type="number" id="input-pro" value="${macro.protein||''}" oninput="updateMacroBars()"><span class="unit">grams</span></div>
