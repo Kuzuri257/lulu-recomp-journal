@@ -1773,7 +1773,7 @@ async function deleteStackItem(id){
 async function quickLogSupplement(stackId){
   const s = getStackItem(stackId);
   if(!s) return;
-  state.suppLogs.push({id:uid(), date:state.today, name:s.name, dose:s.dose, unit:s.unit});
+  state.suppLogs.push({id:uid(), date:getEntryDate(), name:s.name, dose:s.dose, unit:s.unit});
   await persistSuppLogs();
   showToast(`${s.name} logged`, 'supplement');
   render();
@@ -1785,7 +1785,7 @@ async function addFreeformSupplement(){
   const unit = document.getElementById('input-supp-unit').value;
   if(!name){ showToast('Enter a supplement name'); return; }
 
-  state.suppLogs.push({id:uid(), date:state.today, name, dose, unit});
+  state.suppLogs.push({id:uid(), date:getEntryDate(), name, dose, unit});
   await persistSuppLogs();
 
   // If this isn't already in her stack, add it automatically so tomorrow it's a one-tap chip
@@ -2108,13 +2108,15 @@ function renderToday(){
 }
 
 function renderSupplements(){
-  const todaysLogs = state.suppLogs.filter(l=>l.date===state.today);
-  const takenNamesToday = new Set(todaysLogs.map(l=>l.name.toLowerCase().trim()));
+  const entryDate = getEntryDate();
+  const isToday = entryDate === state.today;
+  const selectedLogs = state.suppLogs.filter(l=>l.date===entryDate);
+  const takenNamesForDate = new Set(selectedLogs.map(l=>l.name.toLowerCase().trim()));
 
   const stackChips = state.suppStack.length ? state.suppStack.map(s=>{
-    const taken = takenNamesToday.has(s.name.toLowerCase().trim());
+    const taken = takenNamesForDate.has(s.name.toLowerCase().trim());
     return `
-      <div class="supp-stack-chip ${taken?'taken-today':''}" onclick="${taken?'':'quickLogSupplement(\''+s.id+'\')'}" title="${taken?'Already logged today':'Tap to log'}">
+      <div class="supp-stack-chip ${taken?'taken-today':''}" onclick="${taken?'':'quickLogSupplement(\''+s.id+'\')'}" title="${taken ? (isToday?'Already logged today':'Already logged for this day') : 'Tap to log'}">
         <span class="ssc-icon">${suppIconFor(s.name)}</span>
         <span>
           <div class="ssc-text">${escapeHtml(s.name)}</div>
@@ -2136,7 +2138,7 @@ function renderSupplements(){
     </div>
   ` : '';
 
-  const todaysLogHtml = todaysLogs.length ? todaysLogs.map(l=>{
+  const todaysLogHtml = selectedLogs.length ? selectedLogs.map(l=>{
     const stackMatch = state.suppStack.find(s=>s.name.toLowerCase().trim()===l.name.toLowerCase().trim());
     let vsTarget = '';
     if(stackMatch && stackMatch.dose>0){
@@ -2156,14 +2158,26 @@ function renderSupplements(){
         <button class="icon-btn" onclick="openEditSuppLog('${l.id}')">✏️</button>
       </div>
     `;
-  }).join('') : '<div class="empty-state">Nothing logged yet today</div>';
+  }).join('') : `<div class="empty-state">Nothing logged yet ${isToday ? 'today' : 'for this day'}</div>`;
 
   const unitOptionsHtml = SUPP_UNITS.map(u=>`<option value="${u}">${u}</option>`).join('');
 
   return `
+    <div class="card date-log-card">
+      <h2><span class="icon">📅</span> ${isToday ? 'Logging Today' : 'Editing Past Day'}</h2>
+      <div class="card-sub">Add or correct supplements for ${formatDateFull(entryDate)}.</div>
+      <div class="date-control-row">
+        <button class="chip" onclick="shiftEntryDate(-1)">‹ Previous</button>
+        <input class="date-input" type="date" value="${entryDate}" max="${state.today}" onchange="setEntryDate(this.value)">
+        <button class="chip" onclick="jumpToToday()">Today</button>
+        <button class="chip" onclick="shiftEntryDate(1)" ${entryDate >= state.today ? 'disabled' : ''}>Next ›</button>
+      </div>
+      ${!isToday ? '<div class="date-pill">Past day supplement mode</div>' : ''}
+    </div>
+
     <div class="card">
       <h2><span class="icon">💊</span> Your Stack</h2>
-      <div class="card-sub">Tap a regular to log it at its target dose for today.</div>
+      <div class="card-sub">Tap a regular to log it at its target dose for ${isToday ? 'today' : 'this day'}.</div>
       <div class="supp-stack-row">${stackChips}</div>
 
       <button class="settings-toggle" onclick="toggleStackManage()">Manage my stack</button>
@@ -2190,7 +2204,7 @@ function renderSupplements(){
     </div>
 
     <div class="card">
-      <h2><span class="icon">📋</span> Today's Supplements</h2>
+      <h2><span class="icon">📋</span> ${isToday ? "Today's" : 'This Day'} Supplements</h2>
       <div class="supp-log-list">${todaysLogHtml}</div>
     </div>
   `;
