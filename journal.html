@@ -332,6 +332,43 @@
     cursor:pointer;
   }
   .chip:hover{background:var(--rose-pale);color:var(--rose-deep);}
+  .chip:disabled{opacity:.45;cursor:not-allowed;}
+
+  /* ===== Date logging control ===== */
+  .date-log-card{
+    border-color:rgba(176,106,79,.26);
+  }
+  .date-control-row{
+    display:grid;
+    grid-template-columns:auto minmax(0,1fr) auto auto;
+    gap:8px;
+    align-items:center;
+    margin-top:12px;
+  }
+  .date-input{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:10px 12px;
+    background:var(--blush);
+    color:var(--ink);
+    font-size:13px;
+    font-weight:800;
+  }
+  .date-input:focus{outline:2px solid var(--rose);outline-offset:1px;}
+  .date-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    width:max-content;
+    margin-top:10px;
+    background:var(--blue-pale);
+    color:var(--blue-deep);
+    border-radius:999px;
+    padding:7px 10px;
+    font-size:11px;
+    font-weight:850;
+  }
 
   /* ===== Macros ===== */
   .macro-targets{
@@ -902,6 +939,8 @@
     .train-options{grid-template-columns:repeat(3,1fr);}
     .macro-grid{grid-template-columns:1fr 1fr;}
     .meal-add-row{grid-template-columns:1fr 1fr;}
+    .date-control-row{grid-template-columns:1fr 1fr;}
+    .date-input{grid-column:1 / -1;order:-1;}
   }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1212,6 +1251,7 @@ let state = {
   settings: {...DEFAULT_SETTINGS},
   selectedTrain: null,
   today: getTodayKey(),
+  entryDate: getTodayKey(),
   activeTab: 'today',
   calMonth: new Date().getMonth(),
   calYear: new Date().getFullYear(),
@@ -1222,6 +1262,25 @@ function getTodayKey(){
   const d = new Date();
   const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
   return `${y}-${m}-${day}`;
+}
+function getEntryDate(){
+  return state.entryDate || state.today;
+}
+function setEntryDate(value){
+  if(!value) return;
+  state.entryDate = value > state.today ? state.today : value;
+  state.selectedTrain = null;
+  render();
+}
+function shiftEntryDate(delta){
+  const d = new Date(getEntryDate() + 'T00:00:00');
+  d.setDate(d.getDate() + delta);
+  const next = dateKey(d);
+  if(next > state.today) return;
+  setEntryDate(next);
+}
+function jumpToToday(){
+  setEntryDate(state.today);
 }
 function uid(){ return crypto.randomUUID(); }
 
@@ -1389,7 +1448,7 @@ async function addActivity(){
   const note = document.getElementById('input-note').value || '';
   state.activities.push({
     id: uid(),
-    date: state.today,
+    date: getEntryDate(),
     type: state.selectedTrain,
     note
   });
@@ -1494,7 +1553,7 @@ function mealTotals(meals){
 }
 
 function syncMacroInputsFromMeals(){
-  const macro = getMacroDay(state.today);
+  const macro = getMacroDay(getEntryDate());
   if(!macro.meals.length) return;
   const totals = mealTotals(macro.meals);
   document.getElementById('input-cal').value = totals.calories || '';
@@ -1512,16 +1571,17 @@ function setBar(id, val, target){
 }
 
 async function saveDayLog(){
+  const entryDate = getEntryDate();
   const steps = parseInt(document.getElementById('input-steps').value) || 0;
   const cal = parseFloat(document.getElementById('input-cal').value) || 0;
   const pro = parseFloat(document.getElementById('input-pro').value) || 0;
   const fat = parseFloat(document.getElementById('input-fat').value) || 0;
   const carb = parseFloat(document.getElementById('input-carb').value) || 0;
 
-  const existing = getMacroDay(state.today);
-  state.macroDays[state.today] = {steps, calories:cal, protein:pro, fat:fat, carbs:carb, meals: existing.meals};
+  const existing = getMacroDay(entryDate);
+  state.macroDays[entryDate] = {steps, calories:cal, protein:pro, fat:fat, carbs:carb, meals: existing.meals};
   await persistMacroDays();
-  showToast("Today's nutrition saved", 'nutrition');
+  showToast(entryDate===state.today ? "Today's nutrition saved" : 'Nutrition saved for selected day', 'nutrition');
   render();
 }
 
@@ -1534,17 +1594,18 @@ async function addMeal(){
   if(!name){ showToast('Add a meal name first'); return; }
   if(!calories && !protein && !fat && !carbs){ showToast('Add at least one meal number'); return; }
 
-  const macro = getMacroDay(state.today);
+  const entryDate = getEntryDate();
+  const macro = getMacroDay(entryDate);
   macro.meals.push({ id: uid(), name, calories, protein, fat, carbs });
   const totals = mealTotals(macro.meals);
-  state.macroDays[state.today] = { ...macro, ...totals };
+  state.macroDays[entryDate] = { ...macro, ...totals };
   await persistMacroDays();
   showToast(`${name} added`, 'nutrition');
   render();
 }
 
 function openEditMeal(id){
-  const macro = getMacroDay(state.today);
+  const macro = getMacroDay(getEntryDate());
   const meal = macro.meals.find(item => item.id === id);
   if(!meal) return;
   openModal(`
@@ -1563,7 +1624,8 @@ function openEditMeal(id){
 }
 
 async function saveEditMeal(id){
-  const macro = getMacroDay(state.today);
+  const entryDate = getEntryDate();
+  const macro = getMacroDay(entryDate);
   const meal = macro.meals.find(item => item.id === id);
   if(!meal) return;
   meal.name = document.getElementById('edit-meal-name').value.trim() || meal.name;
@@ -1572,7 +1634,7 @@ async function saveEditMeal(id){
   meal.fat = parseFloat(document.getElementById('edit-meal-fat').value) || 0;
   meal.carbs = parseFloat(document.getElementById('edit-meal-carb').value) || 0;
   const totals = mealTotals(macro.meals);
-  state.macroDays[state.today] = { ...macro, ...totals };
+  state.macroDays[entryDate] = { ...macro, ...totals };
   await persistMacroDays();
   closeModal();
   showToast('Meal updated', 'nutrition');
@@ -1580,10 +1642,11 @@ async function saveEditMeal(id){
 }
 
 async function deleteMeal(id){
-  const macro = getMacroDay(state.today);
+  const entryDate = getEntryDate();
+  const macro = getMacroDay(entryDate);
   macro.meals = macro.meals.filter(meal => meal.id !== id);
   const totals = mealTotals(macro.meals);
-  state.macroDays[state.today] = { ...macro, ...totals };
+  state.macroDays[entryDate] = { ...macro, ...totals };
   await persistMacroDays();
   showToast('Meal removed');
   render();
@@ -1797,6 +1860,11 @@ function selectLogDate(key){
   state.selectedLogDate = state.selectedLogDate===key ? null : key;
   render();
 }
+function editLogDate(key){
+  state.entryDate = key > state.today ? state.today : key;
+  state.selectedTrain = null;
+  setTab('today');
+}
 
 function formatDateNice(key){
   const d = new Date(key+'T00:00:00');
@@ -1855,6 +1923,9 @@ function escapeHtml(str){
 /* RENDER */
 /* ============================================================ */
 function render(){
+  const latestToday = getTodayKey();
+  if(state.today !== latestToday) state.today = latestToday;
+  if(!state.entryDate || state.entryDate > state.today) state.entryDate = state.today;
   const app = document.getElementById('app');
   const streak = calcStreak();
   const weekScore = calcWeekScore();
@@ -1909,8 +1980,10 @@ function render(){
 }
 
 function renderToday(){
-  const todaysActivities = state.activities.filter(a=>a.date===state.today);
-  const macro = getMacroDay(state.today);
+  const entryDate = getEntryDate();
+  const isToday = entryDate === state.today;
+  const todaysActivities = state.activities.filter(a=>a.date===entryDate);
+  const macro = getMacroDay(entryDate);
   const s = state.settings;
   const totals = mealTotals(macro.meals);
   const mealListHtml = macro.meals.length ? macro.meals.map(meal => `
@@ -1924,7 +1997,7 @@ function renderToday(){
         <button class="icon-btn" onclick="deleteMeal('${meal.id}')" title="Remove meal">✕</button>
       </div>
     </div>
-  `).join('') : '<div class="empty-state">No meals logged yet today</div>';
+  `).join('') : `<div class="empty-state">No meals logged yet ${isToday ? 'today' : 'for this day'}</div>`;
 
   const activityListHtml = todaysActivities.length ? todaysActivities.map(a=>{
     const t = ACTIVITY_TYPES.find(x=>x.key===a.type);
@@ -1945,9 +2018,21 @@ function renderToday(){
   }).join('') : '';
 
   return `
+    <div class="card date-log-card">
+      <h2><span class="icon">📅</span> ${isToday ? 'Logging Today' : 'Editing Past Day'}</h2>
+      <div class="card-sub">Add or correct steps, meals, macros, and training for ${formatDateFull(entryDate)}.</div>
+      <div class="date-control-row">
+        <button class="chip" onclick="shiftEntryDate(-1)">‹ Previous</button>
+        <input class="date-input" type="date" value="${entryDate}" max="${state.today}" onchange="setEntryDate(this.value)">
+        <button class="chip" onclick="jumpToToday()">Today</button>
+        <button class="chip" onclick="shiftEntryDate(1)" ${entryDate >= state.today ? 'disabled' : ''}>Next ›</button>
+      </div>
+      ${!isToday ? '<div class="date-pill">Past day edit mode</div>' : ''}
+    </div>
+
     <div class="card">
-      <h2><span class="icon">🏋️</span> Today's Activities</h2>
-      <div class="card-sub">Add as many as you did today — training, yoga, walks, whatever moved.</div>
+      <h2><span class="icon">🏋️</span> ${isToday ? "Today's" : 'This Day'} Activities</h2>
+      <div class="card-sub">Add as many as you did ${isToday ? 'today' : 'that day'} — training, yoga, walks, whatever moved.</div>
       ${activityListHtml ? `<div class="activity-list">${activityListHtml}</div>` : ''}
       <div class="train-options">
         ${ACTIVITY_TYPES.map(t=>`
@@ -2017,7 +2102,7 @@ function renderToday(){
         <button class="btn btn-primary btn-block" onclick="saveSettingsForm()">Save targets</button>
       </div>
       <div class="section-spacer"></div>
-      <button class="btn btn-primary btn-block" onclick="saveDayLog()">Save Today's Nutrition</button>
+      <button class="btn btn-primary btn-block" onclick="saveDayLog()">Save ${isToday ? "Today's" : 'This Day'} Nutrition</button>
     </div>
   `;
 }
@@ -2290,6 +2375,8 @@ function renderLog(){
       <div class="card">
         <h2><span class="icon">📋</span> ${formatDateFull(key)}</h2>
         ${(actHtml || macroHtml || suppHtml) ? actHtml + macroHtml + suppHtml : '<div class="empty-state">Nothing logged this day</div>'}
+        <div class="section-spacer"></div>
+        <button class="btn btn-primary btn-block" onclick="editLogDate('${key}')">Edit this day</button>
       </div>
     `;
   }
@@ -2337,6 +2424,7 @@ function renderLog(){
       <div class="log-day-group">
         <div class="log-day-header">${formatDateFull(date)}</div>
         ${items}${macroItem}${suppItems}
+        <button class="btn btn-ghost btn-block" onclick="editLogDate('${date}')">Edit this day</button>
       </div>
     `;
   }).join('');
